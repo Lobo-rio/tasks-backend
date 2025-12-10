@@ -131,9 +131,9 @@ Edite o arquivo `.env`:
 # Database
 DATABASE_HOST=localhost
 DATABASE_PORT=5432
-DATABASE_USER=tasks_user
-DATABASE_PASSWORD=tasks_pass_2024
-DATABASE_NAME=tasks
+DATABASE_USER=example_multi_user
+DATABASE_PASSWORD=example_multi_user_2024
+DATABASE_NAME=example_multi_user
 
 # Application
 PORT=3000
