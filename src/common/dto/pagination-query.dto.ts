@@ -13,6 +13,30 @@ export class PaginationQueryDto {
     page?: number = 1;
 
     @IsOptional()
+    @IsString()
+    status?: string;
+
+    @IsOptional()
+    @IsString()
+    priority?: string;
+
+    @IsOptional()
+    @IsString()
+    userId?: string;
+
+    @IsOptional()
+    @IsString()
+    squadId?: string;
+
+    @IsOptional()
+    @IsString()
+    startDate?: string;
+
+    @IsOptional()
+    @IsString()
+    endDate?: string;
+
+    @IsOptional()
     @Type(() => Number)
     @IsInt()
     @Min(1)

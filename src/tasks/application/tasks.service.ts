@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Like } from 'typeorm';
+import { Repository, Like, Between, LessThanOrEqual, MoreThanOrEqual } from 'typeorm';
 import { Task } from '../domain/task.entity';
 import { CreateTaskDto } from './dto/create-task.dto';
 import { UpdateTaskDto } from './dto/update-task.dto';
@@ -20,23 +20,29 @@ export class TasksService {
     }
 
     async findAll(query: PaginationQueryDto): Promise<PaginatedResult<Task>> {
-        const { search, page = 1, limit = 10 } = query;
+        const { search, page = 1, limit = 10, status, priority, userId, squadId, startDate, endDate } = query;
         const skip = (page - 1) * limit;
 
-        const whereConditions = search
-            ? [
-                { title: Like(`%${search}%`) },
-                { description: Like(`%${search}%`) },
-            ]
-            : {};
+        const queryBuilder = this.taskRepository.createQueryBuilder('task')
+            .leftJoinAndSelect('task.user', 'user')
+            .leftJoinAndSelect('task.squad', 'squad')
+            .skip(skip)
+            .take(limit)
+            .orderBy('task.createdAt', 'DESC');
 
-        const [data, total] = await this.taskRepository.findAndCount({
-            where: whereConditions,
-            relations: ['user', 'squad'],
-            order: { createdAt: 'DESC' },
-            skip,
-            take: limit,
-        });
+        if (status) queryBuilder.andWhere('task.status = :status', { status });
+        if (priority) queryBuilder.andWhere('task.priority = :priority', { priority });
+        if (userId) queryBuilder.andWhere('task.user_id = :userId', { userId });
+        if (squadId) queryBuilder.andWhere('task.squad_id = :squadId', { squadId });
+
+        if (startDate) queryBuilder.andWhere('task.due_date >= :startDate', { startDate });
+        if (endDate) queryBuilder.andWhere('task.due_date <= :endDate', { endDate });
+
+        if (search) {
+            queryBuilder.andWhere('(task.title LIKE :search OR task.description LIKE :search)', { search: `%${search}%` });
+        }
+
+        const [data, total] = await queryBuilder.getManyAndCount();
 
         return {
             data,
