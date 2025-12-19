@@ -19,8 +19,8 @@ import { TasksModule } from './tasks/tasks.module';
       database: process.env.DATABASE_NAME,
       entities: [__dirname + '/**/*.entity{.ts,.js}'],
       migrations: [__dirname + '/migrations/*{.ts,.js}'],
-      migrationsRun: true, // Executar migrações automaticamente ao iniciar
-      synchronize: process.env.NODE_ENV === 'development', // Only for development!
+      migrationsRun: true,
+      synchronize: process.env.NODE_ENV === 'development',
       logging: process.env.NODE_ENV === 'development',
     }),
     UsersModule,
