@@ -1,12 +1,12 @@
-import { IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsOptional, IsString, MaxLength } from "class-validator";
 
 export class UpdateSquadDto {
-    @IsOptional()
-    @IsString()
-    @MaxLength(255)
-    name?: string;
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  name?: string;
 
-    @IsOptional()
-    @IsString()
-    description?: string;
+  @IsOptional()
+  @IsString()
+  description?: string;
 }
