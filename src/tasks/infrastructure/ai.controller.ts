@@ -77,7 +77,7 @@ export class AiController {
 
       // 3. Generate Content
       const model = this.genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
+        model: "gemini-3-flash-preview",
       });
       const result = await model.generateContent([
         {
@@ -142,7 +142,7 @@ export class AiController {
       );
 
       const model = this.genAI.getGenerativeModel({
-        model: "gemini-1.5-pro",
+        model: "gemini-3-flash-preview",
       });
 
       const prompt = `
