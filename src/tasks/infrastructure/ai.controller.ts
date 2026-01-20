@@ -3,7 +3,6 @@ import {
   Post,
   UseInterceptors,
   UploadedFile,
-  Body,
   Get,
   Query,
   HttpException,
@@ -143,7 +142,7 @@ export class AiController {
       );
 
       const model = this.genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
+        model: "gemini-1.5-pro",
       });
 
       const prompt = `
