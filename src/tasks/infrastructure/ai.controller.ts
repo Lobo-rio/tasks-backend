@@ -16,12 +16,14 @@ import { diskStorage } from "multer";
 import { extname } from "path";
 import * as fs from "fs";
 import { TasksService } from "../application/tasks.service";
+import { GeminiHelper } from "./gemini.helper";
 
 @Controller("tasks/ai")
 export class AiController {
   private genAI: GoogleGenerativeAI;
   private fileManager: GoogleAIFileManager;
   private readonly logger = new Logger(AiController.name);
+  private readonly geminiHelper = new GeminiHelper();
 
   constructor(private readonly tasksService: TasksService) {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -78,20 +80,23 @@ export class AiController {
       const model = this.genAI.getGenerativeModel({
         model: "gemini-3-flash-preview",
       });
-      const result = await model.generateContent([
-        {
-          fileData: {
-            mimeType: uploadResponse.file.mimeType,
-            fileUri: uploadResponse.file.uri,
-          },
-        },
-        {
-          text: 'Analyze this video and extract the most important points as a JSON list of tasks. Return ONLY valid JSON in the format: [{"title": "...", "description": "...", "priority": "medium", "status": "todo"}]. Do not add markdown code blocks. The response must be in Brazilian Portuguese.',
-        },
-      ]);
+      const result = await this.geminiHelper.executeWithRetry(
+        async () =>
+          model.generateContent([
+            {
+              fileData: {
+                mimeType: uploadResponse.file.mimeType,
+                fileUri: uploadResponse.file.uri,
+              },
+            },
+            {
+              text: 'Analyze this video and extract the most important points as a JSON list of tasks. Return ONLY valid JSON in the format: [{"title": "...", "description": "...", "priority": "medium", "status": "todo"}]. Do not add markdown code blocks. The response must be in Brazilian Portuguese.',
+            },
+          ]),
+        "Análise de vídeo com Gemini"
+      );
 
       const responseText = result.response.text();
-      this.logger.debug(`Resposta do Gemini: ${responseText}`);
 
       fs.unlinkSync(file.path);
 
@@ -109,15 +114,23 @@ export class AiController {
         return { raw: responseText };
       }
     } catch (error) {
-      this.logger.error(
-        `Erro ao analisar vídeo: ${error.message}`,
-        error.stack
-      );
+      const errorMessage = error?.message || "Erro desconhecido";
+      this.logger.error(`Erro ao analisar vídeo: ${errorMessage}`, error.stack);
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
-      throw new HttpException(
-        "Falha ao analisar o vídeo: " + error.message,
-        HttpStatus.INTERNAL_SERVER_ERROR
-      );
+
+      let userMessage = "Falha ao analisar o vídeo: " + errorMessage;
+      if (errorMessage.includes("overloaded") || errorMessage.includes("503")) {
+        userMessage =
+          "O serviço de IA está sobrecarregado. Por favor, tente novamente em alguns instantes.";
+      } else if (
+        errorMessage.includes("rate limit") ||
+        errorMessage.includes("429")
+      ) {
+        userMessage =
+          "Limite de requisições atingido. Por favor, aguarde um momento e tente novamente.";
+      }
+
+      throw new HttpException(userMessage, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 
@@ -141,7 +154,7 @@ export class AiController {
       );
 
       const model = this.genAI.getGenerativeModel({
-        model: "gemini-3-flash-preview",
+        model: "gemini-2.5-flash",
       });
 
       const prompt = `
@@ -157,7 +170,10 @@ export class AiController {
             Return ONLY a JSON object: { "relevantTaskIds": ["id1", "id2"], "summary": "optional summary if asked" }
             `;
 
-      const result = await model.generateContent(prompt);
+      const result = await this.geminiHelper.executeWithRetry(
+        async () => model.generateContent(prompt),
+        "Busca IA de tarefas"
+      );
       const text = result.response.text();
 
       try {
@@ -185,11 +201,23 @@ export class AiController {
         return { error: "Falha ao interpretar resultado da busca", raw: text };
       }
     } catch (error) {
-      this.logger.error(`Erro na Busca IA: ${error.message}`, error.stack);
-      throw new HttpException(
-        "Falha na busca IA: " + error.message,
-        HttpStatus.INTERNAL_SERVER_ERROR
-      );
+      const errorMessage = error?.message || "Erro desconhecido";
+      this.logger.error(`Erro na Busca IA: ${errorMessage}`, error.stack);
+
+      // Mensagens de erro mais específicas
+      let userMessage = "Falha na busca IA: " + errorMessage;
+      if (errorMessage.includes("overloaded") || errorMessage.includes("503")) {
+        userMessage =
+          "O serviço de IA está sobrecarregado. Por favor, tente novamente em alguns instantes.";
+      } else if (
+        errorMessage.includes("rate limit") ||
+        errorMessage.includes("429")
+      ) {
+        userMessage =
+          "Limite de requisições atingido. Por favor, aguarde um momento e tente novamente.";
+      }
+
+      throw new HttpException(userMessage, HttpStatus.INTERNAL_SERVER_ERROR);
     }
   }
 }
