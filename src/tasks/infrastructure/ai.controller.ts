@@ -7,6 +7,7 @@ import {
   Query,
   HttpException,
   HttpStatus,
+  Logger,
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 import { GoogleGenerativeAI } from "@google/generative-ai";
@@ -20,6 +21,7 @@ import { TasksService } from "../application/tasks.service";
 export class AiController {
   private genAI: GoogleGenerativeAI;
   private fileManager: GoogleAIFileManager;
+  private readonly logger = new Logger(AiController.name);
 
   constructor(private readonly tasksService: TasksService) {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -46,36 +48,33 @@ export class AiController {
   async analyzeVideo(@UploadedFile() file: Express.Multer.File) {
     if (!this.genAI) {
       throw new HttpException(
-        "GEMINI_API_KEY not configured",
+        "Chave de API GEMINI não configurada",
         HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
 
     try {
-      // 1. Upload to Gemini
-      console.log("Uploading file to Gemini...", file.path);
+      this.logger.debug(`Enviando arquivo para Gemini: ${file.path}`);
       const uploadResponse = await this.fileManager.uploadFile(file.path, {
         mimeType: file.mimetype,
         displayName: file.originalname,
       });
 
-      console.log(
-        `Uploaded file, uri: ${uploadResponse.file.uri}, state: ${uploadResponse.file.state}`
+      this.logger.log(
+        `Arquivo enviado, uri: ${uploadResponse.file.uri}, estado: ${uploadResponse.file.state}`
       );
 
-      // 2. Wait for processing (for videos it's usually active, but good practice to check)
       let fileState = await this.fileManager.getFile(uploadResponse.file.name);
       while (fileState.state === "PROCESSING") {
-        console.log("Processing video...");
+        this.logger.debug("Processando vídeo...");
         await new Promise((resolve) => setTimeout(resolve, 2000));
         fileState = await this.fileManager.getFile(uploadResponse.file.name);
       }
 
       if (fileState.state === "FAILED") {
-        throw new Error("Video processing failed.");
+        throw new Error("Falha no processamento do vídeo.");
       }
 
-      // 3. Generate Content
       const model = this.genAI.getGenerativeModel({
         model: "gemini-3-flash-preview",
       });
@@ -87,17 +86,15 @@ export class AiController {
           },
         },
         {
-          text: 'Analyze this video and extract the most important points as a JSON list of tasks. Return ONLY valid JSON in the format: [{"title": "...", "description": "...", "priority": "medium", "status": "todo"}]. Do not add markdown code blocks.',
+          text: 'Analyze this video and extract the most important points as a JSON list of tasks. Return ONLY valid JSON in the format: [{"title": "...", "description": "...", "priority": "medium", "status": "todo"}]. Do not add markdown code blocks. The response must be in Brazilian Portuguese.',
         },
       ]);
 
       const responseText = result.response.text();
-      console.log("Gemini Response:", responseText);
+      this.logger.debug(`Resposta do Gemini: ${responseText}`);
 
-      // Clean up local file because we don't need it anymore
       fs.unlinkSync(file.path);
 
-      // Attempt to parse JSON
       try {
         const cleanJson = responseText
           .replace(/```json/g, "")
@@ -105,15 +102,20 @@ export class AiController {
           .trim();
         return JSON.parse(cleanJson);
       } catch (e) {
-        console.error("Failed to parse JSON", e);
+        this.logger.error(
+          `Falha ao fazer parse do JSON: ${e.message}`,
+          e.stack
+        );
         return { raw: responseText };
       }
     } catch (error) {
-      console.error("Error analyzing video:", error);
-      // Clean up local file in case of error
+      this.logger.error(
+        `Erro ao analisar vídeo: ${error.message}`,
+        error.stack
+      );
       if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
       throw new HttpException(
-        "Failed to analyze video: " + error.message,
+        "Falha ao analisar o vídeo: " + error.message,
         HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
@@ -123,15 +125,12 @@ export class AiController {
   async aiSearch(@Query("query") query: string) {
     if (!this.genAI) {
       throw new HttpException(
-        "GEMINI_API_KEY not configured",
+        "Chave de API GEMINI não configurada",
         HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
 
     try {
-      // Fetch all tasks (simplified approach for "Database Interpretation")
-      // Ideally we would search using embedding or SQL generation, but for this scale
-      // feeding Context to LLM is effective and fits "Interpret Database" request.
       const allTasks = await this.tasksService.findAll({ limit: 100 }); // Analyzing last 100 tasks contexts
       const tasksContext = JSON.stringify(
         allTasks.data.map((t) => ({
@@ -176,16 +175,19 @@ export class AiController {
         }
         return {
           tasks: [],
-          summary: parsed.summary || "No relevant tasks found.",
+          summary: parsed.summary || "Nenhuma tarefa relevante encontrada.",
         };
       } catch (e) {
-        console.error("AI Search Parse Error", e);
-        return { error: "Failed to interpret search result", raw: text };
+        this.logger.error(
+          `Erro ao fazer parse da busca IA: ${e.message}`,
+          e.stack
+        );
+        return { error: "Falha ao interpretar resultado da busca", raw: text };
       }
     } catch (error) {
-      console.error("Error in AI Search:", error);
+      this.logger.error(`Erro na Busca IA: ${error.message}`, error.stack);
       throw new HttpException(
-        "AI Search failed: " + error.message,
+        "Falha na busca IA: " + error.message,
         HttpStatus.INTERNAL_SERVER_ERROR
       );
     }
